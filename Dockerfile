@@ -17,7 +17,8 @@ RUN pip install --break-system-packages --no-cache-dir -U \
     "yt-dlp[default]" instaloader \
     && yt-dlp --version \
     && instaloader --version \
-    && python3 -c "from PIL import features; print('raqm=', features.check('raqm')); print('fribidi=', features.check('fribidi'))"
+    && python3 -c "from PIL import features; raqm=features.check('raqm'); fribidi=features.check('fribidi'); print('raqm=', raqm, 'fribidi=', fribidi)" \
+    && python3 -c "from PIL import Image, ImageDraw, ImageFont; f=ImageFont.truetype('/usr/share/fonts/truetype/freefont/FreeSans.ttf',20); print('Pillow OK')"
 
 # KS-Downloader (captcha-resistant Kuaishou downloader)
 COPY ks-downloader /app/ks-downloader
