@@ -63,6 +63,9 @@ function pickBengaliFont(weight = 'bold') {
     '/usr/share/fonts/truetype/noto/NotoSansBengali-Regular.ttf',
   ];
   for (const c of candidates) if (fs.existsSync(c)) return c;
+  // fallback: let ffmpeg/pillow use default — avoid crash
+  const sys = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+  if (fs.existsSync(sys)) return sys;
   throw new Error('No Bengali font available');
 }
 
@@ -96,7 +99,6 @@ async function downloadAudioFromUrl(url, dest, jobLog) {
       if (fs.existsSync(TIKTOK_COOKIES_FILE) && fs.statSync(TIKTOK_COOKIES_FILE).size > 100)
         args.push('--cookies', TIKTOK_COOKIES_FILE);
     }
-    args.push('-o', dest);
     const proc = spawn('yt-dlp', args, { stdio: ['ignore', 'pipe', 'pipe'] });
     proc.stdout.on('data', d => d.toString().split(/\r?\n/).forEach(l => l && jobLog.info(`audio> ${l}`)));
     proc.stderr.on('data', d => d.toString().split(/\r?\n/).forEach(l => l && jobLog.warn(`audio> ${l}`)));
@@ -139,7 +141,7 @@ async function convertTo916(inputPath, outputPath, jobLog, speed = 1) {
 // ─── Heading renderers ────────────────────────────────────────────
 async function addHeadingLegacy(inputPath, outputPath, text, position, fontSize, jobLog) {
   const sanitizedText = String(text).replace(/'/g, '\u2019').replace(/:/g, '\\:');
-  const fontPath = '/app/src/public/fonts/HindSiliguri-Bold.ttf';
+  const fontPath = pickBengaliFont('bold');
   const yMap = { top: '80', center: '(h/2-text_h/2)', bottom: '(h-text_h-80)' };
   const y = yMap[position] || '80';
   const drawtext = [
@@ -234,11 +236,23 @@ global_title = str(cfg.get('global_title') or '').strip()
 font_path = cfg['font_path']
 emoji_font_path = cfg.get('emoji_font_path')
 
-try:
-    layout = ImageFont.Layout.RAQM
-except AttributeError:
-    layout = ImageFont.LAYOUT_RAQM if hasattr(ImageFont, 'LAYOUT_RAQM') else ImageFont.LAYOUT_BASIC
+def _detect_layout(fp):
+    basic = ImageFont.Layout.BASIC if hasattr(ImageFont, 'Layout') else (ImageFont.LAYOUT_BASIC if hasattr(ImageFont, 'LAYOUT_BASIC') else 0)
+    raqm  = ImageFont.Layout.RAQM  if hasattr(ImageFont, 'Layout') else (ImageFont.LAYOUT_RAQM  if hasattr(ImageFont, 'LAYOUT_RAQM')  else None)
+    if raqm is None:
+        return basic
+    try:
+        f = ImageFont.truetype(fp, 20, layout_engine=raqm)
+        tmp = Image.new('RGBA', (200, 40))
+        d   = ImageDraw.Draw(tmp)
+        bb  = d.textbbox((0, 0), '\u09ac\u09be\u0982\u09b2\u09be', font=f)
+        if bb[2] - bb[0] < 120:
+            return raqm
+        return basic
+    except Exception:
+        return basic
 
+layout = _detect_layout(font_path)
 emoji_layout = ImageFont.Layout.BASIC if hasattr(ImageFont, 'Layout') else (ImageFont.LAYOUT_BASIC if hasattr(ImageFont, 'LAYOUT_BASIC') else 0)
 
 img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
@@ -340,7 +354,9 @@ def render_global_title(draw, text, max_w, start_font_size, min_size, y_start, e
                 ef = emoji_f
         lines = wrap_text_px(text, f, max_w)[:3]
         lh = int(fs * 1.25)
-        fits = all(True for ln in lines)
+        tmp_img2 = Image.new('RGBA', (max_w + 100, 60))
+        tmp_d2 = ImageDraw.Draw(tmp_img2)
+        fits = all(tmp_d2.textbbox((0,0), ln, font=f)[2] - tmp_d2.textbbox((0,0), ln, font=f)[0] <= max_w for ln in lines)
         if fits:
             return f, ef, lines, lh, y_start
         fs -= 1
@@ -364,21 +380,26 @@ gold = (255, 200, 50, 255)
 # ── Global title at top ──
 title_bottom_y = 0
 if global_title:
-    pad_x = 24
-    pad_y = 18
+    pad_x = 32
+    pad_y = 20
+    max_text_w = W - pad_x * 2
     gt_font, gt_ef, gt_lines, gt_lh, _ = render_global_title(
-        draw, global_title, W - pad_x * 2, global_title_size, 28, pad_y, emoji_font
+        draw, global_title, max_text_w, global_title_size, 26, pad_y, emoji_font
     )
     block_h = gt_lh * len(gt_lines) + pad_y * 2
-    draw.rounded_rectangle((0, 0, W, block_h + 8), radius=0, fill=(0, 0, 0, 160))
+    draw.rounded_rectangle((0, 0, W, block_h + 10), radius=0, fill=(0, 0, 0, 175))
     cy = pad_y
     for ln in gt_lines:
-        bb = draw.textbbox((0, 0), ln, font=gt_font)
+        # measure with tmp draw for accuracy
+        tmp2 = Image.new('RGBA', (W + 100, gt_lh + 10))
+        td2  = ImageDraw.Draw(tmp2)
+        bb = td2.textbbox((0, 0), ln, font=gt_font)
         lw = bb[2] - bb[0]
-        lx = (W - lw) // 2 - bb[0]
+        # clamp so text never goes outside pad_x margin
+        lx = max(pad_x, (W - lw) // 2 - bb[0])
         draw_text_with_emoji(draw, lx, cy - bb[1], ln, gt_font, gt_ef, white, shadow)
         cy += gt_lh
-    title_bottom_y = block_h + 8
+    title_bottom_y = block_h + 10
 
 if preset == 'current_badge':
     badge_top = title_bottom_y + 18
@@ -395,17 +416,28 @@ else:
     list_top = title_bottom_y + 14
     start_y = list_top + (196 if total_ranks <= 5 else 151)
     gap = 98 if total_ranks <= 5 else 84
+    # pre-measure widest number label to align all titles consistently
+    tmp_measure = Image.new('RGBA', (200, 100))
+    tmp_d = ImageDraw.Draw(tmp_measure)
+    max_num_w = 0
+    for r in range(1, total_ranks + 1):
+        f_ = active_num_font if r == current_rank else num_font
+        bb_ = tmp_d.textbbox((0, 0), f'{r}.', font=f_)
+        max_num_w = max(max_num_w, bb_[2] - bb_[0])
+    num_x = 28
+    title_x = num_x + max_num_w + 14   # 14px gap after widest number
+
     for rank in range(1, total_ranks + 1):
         y = start_y + (rank - 1) * gap
         is_active = rank == current_rank
         font = active_num_font if is_active else num_font
         fill = gold if is_active else faded
-        draw_text_with_emoji(draw, 32, y, f'{rank}.', font, emoji_font, fill, shadow)
+        draw_text_with_emoji(draw, num_x, y, f'{rank}.', font, emoji_font, fill, shadow)
         if is_active and title:
-            lines = wrap_text_px(title, active_title_font, W - 155)[:2]
+            lines = wrap_text_px(title, active_title_font, W - title_x - 16)[:2]
             ty = y + 18
             for line in lines:
-                draw_text_with_emoji(draw, 118, ty, line, active_title_font, emoji_font, white, shadow)
+                draw_text_with_emoji(draw, title_x, ty, line, active_title_font, emoji_font, white, shadow)
                 ty += 50
 
 img.save(cfg['out'])
@@ -490,7 +522,7 @@ async function concatClips(clipPaths, outputPath, jobLog) {
   }
 
   const concatFile = outputPath + '.concat.txt';
-  fs.writeFileSync(concatFile, clipPaths.map(p => `file '${p}'`).join('\n'));
+  fs.writeFileSync(concatFile, clipPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
 
   await runFFmpeg([
     '-f', 'concat', '-safe', '0',
@@ -530,8 +562,11 @@ async function applyAudio(inputPath, outputPath, audioOpts, workDir, jobLog) {
     const getDuration = (filePath) => {
       try {
         const { execSync } = require('child_process');
-        const out = execSync(`ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`).toString().trim();
-        return parseFloat(out) || 0;
+        const out = execSync(
+          `ffprobe -v quiet -show_entries format=duration -of csv=p=0 "${filePath}"`,
+          { encoding: 'utf8', stdio: ['pipe','pipe','pipe'] }
+        );
+        return parseFloat(out.toString().trim()) || 0;
       } catch (_) { return 0; }
     };
 
@@ -593,7 +628,7 @@ async function mergeVideos({ videoFiles, sourcesMeta = [], workDir, jobId, headi
       const rankItem = buildRankingItem(sourcesMeta[i], i, croppedPaths.length, ranking);
       jobLog.info(`🏆 Adding ranking overlay ${i + 1}/${croppedPaths.length} → #${rankItem.currentRank}`);
       await addRankingOverlay(croppedPaths[i], headed, rankItem, jobLog);
-    } else if (heading && heading.text && heading.text.trim()) {
+    } else if (heading) {
       jobLog.info(`📝 Adding heading ${i + 1}/${croppedPaths.length}...`);
       await addHeading(croppedPaths[i], headed, heading, jobLog);
     } else {
