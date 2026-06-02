@@ -240,6 +240,10 @@ textarea { resize: vertical; min-height: 70px; }
       </div>
     </div>
     <div class="rank-note">সব rank সাদা থাকবে, আর যে clip এখন play হবে সেই current number লাল highlight হবে। প্রতিটা source-এর title URL input-এর নিচে দিন।</div>
+    <div style="margin-top:10px">
+      <label style="font-size:13px;color:#aaa;display:block;margin-bottom:4px">Global Title (টপে বড় হেডিং — যেমন "Ranking Funniest Fails 😂")</label>
+      <input type="text" id="rankingGlobalTitle" placeholder='e.g. Ranking Scariest Animal Encounters 🐻 — বাংলা + emoji OK' style="width:100%;padding:8px 10px;background:#1a1a2e;border:1px solid #333;border-radius:8px;color:#fff;font-size:14px">
+    </div>
   </div>
 
   <div class="card">
@@ -663,6 +667,7 @@ async function startJob() {
       enabled: document.getElementById('rankingEnabled').checked,
       direction: document.getElementById('rankingDirection').value,
       preset: document.getElementById('rankingPreset').value,
+      globalTitle: document.getElementById('rankingGlobalTitle').value.trim(),
     },
     audioOpts: {
       mode: isVoiceover ? 'mute' : audioMode,
