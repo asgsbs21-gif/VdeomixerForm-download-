@@ -274,19 +274,21 @@ badge_title_font = ImageFont.truetype(font_path, badge_title_size, layout_engine
 def make_global_title_font(size):
     return ImageFont.truetype(font_path, size, layout_engine=layout)
 
-emoji_font = None
-if emoji_font_path:
-    try:
-        emoji_font = ImageFont.truetype(emoji_font_path, active_title_size, layout_engine=emoji_layout)
-    except Exception:
-        emoji_font = None
+# NotoColorEmoji is a bitmap font that only renders at size 109
+# We load at 109 and paste+resize into draw surface for other sizes
+EMOJI_NATIVE_SIZE = 109
 
-badge_emoji_font = None
-if emoji_font_path:
+def make_emoji_font():
+    if not emoji_font_path:
+        return None
     try:
-        badge_emoji_font = ImageFont.truetype(emoji_font_path, badge_title_size, layout_engine=emoji_layout)
+        return ImageFont.truetype(emoji_font_path, EMOJI_NATIVE_SIZE, layout_engine=emoji_layout)
     except Exception:
-        badge_emoji_font = emoji_font
+        return None
+
+emoji_font_obj = make_emoji_font()
+emoji_font = emoji_font_obj
+badge_emoji_font = emoji_font_obj
 
 def is_emoji(ch):
     try:
@@ -296,7 +298,30 @@ def is_emoji(ch):
     except Exception:
         return False
 
+def render_emoji_to_img(seq, target_size, emoji_font_obj):
+    """Render emoji at native size 109 then resize to target_size."""
+    try:
+        bb = ImageDraw.Draw(Image.new('RGBA',(10,10))).textbbox((0,0), seq, font=emoji_font_obj)
+        ew = max(1, bb[2]-bb[0])
+        eh = max(1, bb[3]-bb[1])
+        tmp_e = Image.new('RGBA', (ew + 20, eh + 20), (0,0,0,0))
+        de = ImageDraw.Draw(tmp_e)
+        de.text((-bb[0]+10, -bb[1]+10), seq, font=emoji_font_obj)
+        # Scale to target_size height
+        scale = target_size / max(1, eh)
+        new_w = max(1, int(ew * scale))
+        new_h = max(1, int(target_size))
+        return tmp_e.resize((new_w + 20, new_h + 20), Image.LANCZOS), new_w
+    except Exception:
+        return None, 0
+
 def draw_text_with_emoji(draw, x, y, text, main_font, emoji_font_obj, fill, shadow=None):
+    # Get target size from main_font
+    try:
+        sample_bb = draw.textbbox((0,0), 'A', font=main_font)
+        target_h = max(16, sample_bb[3] - sample_bb[1])
+    except Exception:
+        target_h = 32
     cx = x
     i = 0
     while i < len(text):
@@ -311,7 +336,15 @@ def draw_text_with_emoji(draw, x, y, text, main_font, emoji_font_obj, fill, shad
                 seq += text[j]
                 j += 1
         use_emoji = emoji_font_obj and any(is_emoji(c) for c in seq)
-        font = emoji_font_obj if use_emoji else main_font
+        if use_emoji:
+            emoji_img, ew = render_emoji_to_img(seq, target_h, emoji_font_obj)
+            if emoji_img:
+                # Get the actual image we're drawing on
+                draw._image.paste(emoji_img, (int(cx), int(y)), emoji_img)
+                cx += ew + 4
+                i = j
+                continue
+        font = main_font
         if shadow:
             sr, sg, sb, sa, sox, soy = shadow
             draw.text((cx + sox, y + soy), seq, font=font, fill=(sr, sg, sb, sa))
