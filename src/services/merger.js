@@ -230,6 +230,7 @@ preset = cfg.get('preset', 'left_list')
 current_rank = int(cfg.get('current_rank', 1))
 total_ranks = max(1, int(cfg.get('total_ranks', 1)))
 title = str(cfg.get('title') or '').strip()
+global_title = str(cfg.get('global_title') or '').strip()
 font_path = cfg['font_path']
 emoji_font_path = cfg.get('emoji_font_path')
 
@@ -237,6 +238,8 @@ try:
     layout = ImageFont.Layout.RAQM
 except AttributeError:
     layout = ImageFont.LAYOUT_RAQM if hasattr(ImageFont, 'LAYOUT_RAQM') else ImageFont.LAYOUT_BASIC
+
+emoji_layout = ImageFont.Layout.BASIC if hasattr(ImageFont, 'Layout') else (ImageFont.LAYOUT_BASIC if hasattr(ImageFont, 'LAYOUT_BASIC') else 0)
 
 img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
 draw = ImageDraw.Draw(img)
@@ -246,6 +249,7 @@ active_num_size = num_size + 4
 small_num_size = 86
 active_title_size = 42
 badge_title_size = 46
+global_title_size = 52
 
 num_font = ImageFont.truetype(font_path, num_size, layout_engine=layout)
 active_num_font = ImageFont.truetype(font_path, active_num_size, layout_engine=layout)
@@ -253,17 +257,20 @@ small_num_font = ImageFont.truetype(font_path, small_num_size, layout_engine=lay
 active_title_font = ImageFont.truetype(font_path, active_title_size, layout_engine=layout)
 badge_title_font = ImageFont.truetype(font_path, badge_title_size, layout_engine=layout)
 
+def make_global_title_font(size):
+    return ImageFont.truetype(font_path, size, layout_engine=layout)
+
 emoji_font = None
 if emoji_font_path:
     try:
-        emoji_font = ImageFont.truetype(emoji_font_path, active_title_size, layout_engine=ImageFont.Layout.BASIC if hasattr(ImageFont, 'Layout') else ImageFont.LAYOUT_BASIC)
+        emoji_font = ImageFont.truetype(emoji_font_path, active_title_size, layout_engine=emoji_layout)
     except Exception:
         emoji_font = None
 
 badge_emoji_font = None
 if emoji_font_path:
     try:
-        badge_emoji_font = ImageFont.truetype(emoji_font_path, badge_title_size, layout_engine=ImageFont.Layout.BASIC if hasattr(ImageFont, 'Layout') else ImageFont.LAYOUT_BASIC)
+        badge_emoji_font = ImageFont.truetype(emoji_font_path, badge_title_size, layout_engine=emoji_layout)
     except Exception:
         badge_emoji_font = emoji_font
 
@@ -282,9 +289,13 @@ def draw_text_with_emoji(draw, x, y, text, main_font, emoji_font_obj, fill, shad
         ch = text[i]
         seq = ch
         j = i + 1
-        while j < len(text) and (text[j] in ('\uFE0F', '\u200D') or (is_emoji(text[j]) and j > i and text[j-1] == '\u200D')):
+        while j < len(text) and text[j] in ('\uFE0F', '\u200D'):
             seq += text[j]
             j += 1
+        if j < len(text) and is_emoji(text[j]) and '\u200D' in seq:
+            while j < len(text) and (text[j] in ('\uFE0F', '\u200D') or is_emoji(text[j])):
+                seq += text[j]
+                j += 1
         use_emoji = emoji_font_obj and any(is_emoji(c) for c in seq)
         font = emoji_font_obj if use_emoji else main_font
         if shadow:
@@ -295,8 +306,10 @@ def draw_text_with_emoji(draw, x, y, text, main_font, emoji_font_obj, fill, shad
         cx += bb[2] - bb[0] + 1
         i = j
 
-
-def wrap_text(text, font, max_w, emoji_font_obj):
+# pixel-precise wrap using a proper tmp draw (fixes Bengali ligature measurement)
+def wrap_text_px(text, font, max_w):
+    tmp_img = Image.new('RGBA', (max_w * 2 + 100, 100))
+    tmp_draw = ImageDraw.Draw(tmp_img)
     words = text.split()
     if not words:
         return []
@@ -304,7 +317,7 @@ def wrap_text(text, font, max_w, emoji_font_obj):
     cur = []
     for w in words:
         candidate = ' '.join(cur + [w])
-        bb = draw.textbbox((0, 0), candidate, font=font)
+        bb = tmp_draw.textbbox((0, 0), candidate, font=font)
         if bb[2] - bb[0] <= max_w or not cur:
             cur.append(w)
         else:
@@ -314,32 +327,82 @@ def wrap_text(text, font, max_w, emoji_font_obj):
         lines.append(' '.join(cur))
     return lines
 
+# auto-shrink global title font to fit width in max 3 lines
+def render_global_title(draw, text, max_w, start_font_size, min_size, y_start, emoji_f):
+    fs = start_font_size
+    while fs >= min_size:
+        f = make_global_title_font(fs)
+        ef = None
+        if emoji_font_path:
+            try:
+                ef = ImageFont.truetype(emoji_font_path, fs, layout_engine=emoji_layout)
+            except Exception:
+                ef = emoji_f
+        lines = wrap_text_px(text, f, max_w)[:3]
+        lh = int(fs * 1.25)
+        fits = all(True for ln in lines)
+        if fits:
+            return f, ef, lines, lh, y_start
+        fs -= 1
+    f = make_global_title_font(min_size)
+    lines = wrap_text_px(text, f, max_w)[:3]
+    lh = int(min_size * 1.25)
+    ef = None
+    if emoji_font_path:
+        try:
+            ef = ImageFont.truetype(emoji_font_path, min_size, layout_engine=emoji_layout)
+        except Exception:
+            ef = emoji_f
+    return f, ef, lines, lh, y_start
+
 shadow = (0, 0, 0, 220, 2, 2)
 white = (255, 255, 255, 245)
 red = (255, 72, 72, 255)
 faded = (255, 255, 255, 210)
+gold = (255, 200, 50, 255)
+
+# ── Global title at top ──
+title_bottom_y = 0
+if global_title:
+    pad_x = 24
+    pad_y = 18
+    gt_font, gt_ef, gt_lines, gt_lh, _ = render_global_title(
+        draw, global_title, W - pad_x * 2, global_title_size, 28, pad_y, emoji_font
+    )
+    block_h = gt_lh * len(gt_lines) + pad_y * 2
+    draw.rounded_rectangle((0, 0, W, block_h + 8), radius=0, fill=(0, 0, 0, 160))
+    cy = pad_y
+    for ln in gt_lines:
+        bb = draw.textbbox((0, 0), ln, font=gt_font)
+        lw = bb[2] - bb[0]
+        lx = (W - lw) // 2 - bb[0]
+        draw_text_with_emoji(draw, lx, cy - bb[1], ln, gt_font, gt_ef, white, shadow)
+        cy += gt_lh
+    title_bottom_y = block_h + 8
 
 if preset == 'current_badge':
-    draw.rounded_rectangle((18, 34, W - 18, 200), radius=28, fill=(0, 0, 0, 135))
-    draw.rounded_rectangle((28, 48, 140, 186), radius=24, fill=(120, 0, 0, 170), outline=(255, 80, 80, 230), width=2)
-    draw_text_with_emoji(draw, 46, 70, f'{current_rank}.', small_num_font, badge_emoji_font, red, shadow)
+    badge_top = title_bottom_y + 18
+    draw.rounded_rectangle((18, badge_top, W - 18, badge_top + 166), radius=28, fill=(0, 0, 0, 135))
+    draw.rounded_rectangle((28, badge_top + 14, 140, badge_top + 152), radius=24, fill=(120, 0, 0, 170), outline=(255, 80, 80, 230), width=2)
+    draw_text_with_emoji(draw, 46, badge_top + 36, f'{current_rank}.', small_num_font, badge_emoji_font, red, shadow)
     if title:
-        lines = wrap_text(title, badge_title_font, W - 176, badge_emoji_font)[:2]
-        ty = 66
+        lines = wrap_text_px(title, badge_title_font, W - 176)[:2]
+        ty = badge_top + 32
         for line in lines:
             draw_text_with_emoji(draw, 165, ty, line, badge_title_font, badge_emoji_font, white, shadow)
             ty += 56
 else:
-    start_y = 210 if total_ranks <= 5 else 165
+    list_top = title_bottom_y + 14
+    start_y = list_top + (196 if total_ranks <= 5 else 151)
     gap = 98 if total_ranks <= 5 else 84
     for rank in range(1, total_ranks + 1):
         y = start_y + (rank - 1) * gap
         is_active = rank == current_rank
         font = active_num_font if is_active else num_font
-        fill = red if is_active else faded
+        fill = gold if is_active else faded
         draw_text_with_emoji(draw, 32, y, f'{rank}.', font, emoji_font, fill, shadow)
         if is_active and title:
-            lines = wrap_text(title, active_title_font, W - 155, emoji_font)[:2]
+            lines = wrap_text_px(title, active_title_font, W - 155)[:2]
             ty = y + 18
             for line in lines:
                 draw_text_with_emoji(draw, 118, ty, line, active_title_font, emoji_font, white, shadow)
@@ -357,6 +420,7 @@ function renderRankingPng(opts) {
     current_rank: opts.currentRank,
     total_ranks: opts.totalRanks,
     title: String(opts.title || ''),
+    global_title: String(opts.globalTitle || ''),
     font_path: pickBengaliFont('bold'),
     emoji_font_path: pickEmojiFont(),
     out: opts.outPath,
@@ -385,6 +449,7 @@ async function addRankingOverlay(inputPath, outputPath, rankingItem, jobLog) {
       currentRank: rankingItem.currentRank,
       totalRanks: rankingItem.totalRanks,
       title: rankingItem.title,
+      globalTitle: rankingItem.globalTitle || '',
       outPath: overlayPng,
     });
 
@@ -413,6 +478,7 @@ function buildRankingItem(sourceMeta, index, total, ranking) {
     currentRank,
     totalRanks: total,
     title: sourceMeta?.rankTitle || sourceMeta?.title || `Rank ${currentRank}`,
+    globalTitle: ranking.globalTitle || '',
   };
 }
 
@@ -430,6 +496,7 @@ async function concatClips(clipPaths, outputPath, jobLog) {
     '-f', 'concat', '-safe', '0',
     '-i', concatFile,
     '-c:v', 'libx264', '-preset', PRESET, '-crf', CRF,
+    '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '128k',
     '-movflags', '+faststart',
     outputPath,
