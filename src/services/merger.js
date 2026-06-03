@@ -684,7 +684,33 @@ async function mergeVideos({ videoFiles, sourcesMeta = [], workDir, jobId, headi
 
   const sizeBytes = fs.statSync(finalPath).size;
   jobLog.info(`✅ Merge complete! (${(sizeBytes/1024/1024).toFixed(2)} MB) → ${finalName}`);
-  return { filePath: finalPath, fileName: finalName, sizeBytes };
+
+  // Generate 360p preview (first 60s, ~3-5MB) for slow connections
+  const previewName = `preview_${jobId}_${timestamp}.mp4`;
+  const previewPath = path.join(OUTPUT_DIR, previewName);
+  try {
+    jobLog.info(`🎞️ Generating 360p preview...`);
+    await runFFmpeg([
+      '-i', finalPath,
+      '-t', '60',
+      '-vf', 'scale=360:-2',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '32',
+      '-c:a', 'aac', '-b:a', '64k',
+      '-movflags', '+faststart',
+      previewPath,
+    ], jobLog, null);
+    const previewSize = fs.statSync(previewPath).size;
+    jobLog.info(`✅ Preview ready (${(previewSize/1024/1024).toFixed(2)} MB) → ${previewName}`);
+  } catch (e) {
+    jobLog.warn(`⚠️ Preview generation failed (non-fatal): ${e.message}`);
+  }
+
+  return {
+    filePath: finalPath,
+    fileName: finalName,
+    sizeBytes,
+    previewName: fs.existsSync(previewPath) ? previewName : null,
+  };
 }
 
 module.exports = { mergeVideos, convertTo916, addHeading, addRankingOverlay };
