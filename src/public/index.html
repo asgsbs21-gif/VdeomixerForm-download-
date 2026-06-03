@@ -735,11 +735,13 @@ async function loadResult(jobId, isVoiceover) {
   const r = job.result;
   const mb = (r.sizeBytes / 1024 / 1024).toFixed(2);
   const fileUrl = '/files/' + encodeURIComponent(r.fileName);
-  document.getElementById('resultInfo').textContent = r.fileName + '  •  ' + mb + ' MB';
+  const previewUrl = r.previewName ? '/files/' + encodeURIComponent(r.previewName) : fileUrl;
+  document.getElementById('resultInfo').textContent = r.fileName + '  •  ' + mb + ' MB'
+    + (r.previewName ? '  |  📱 360p preview ready' : '');
   document.getElementById('downloadBtn').href = fileUrl;
   document.getElementById('downloadBtn').download = r.fileName;
   const video = document.getElementById('videoPreview');
-  video.src = fileUrl; video.load();
+  video.src = previewUrl; video.load();
   document.getElementById('voiceoverSection').style.display = isVoiceover ? 'block' : 'none';
   document.getElementById('resultCard').classList.add('show');
   document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
