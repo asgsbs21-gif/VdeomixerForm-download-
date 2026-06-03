@@ -347,6 +347,38 @@ textarea { resize: vertical; min-height: 70px; }
       <a class="btn btn-outline" id="downloadBtn" href="#" download>⬇ Download</a>
       <button class="btn btn-green" onclick="uploadYT()">▶ YouTube</button>
       <button class="btn btn-outline" onclick="uploadDrive()">📂 Drive</button>
+      <button class="btn btn-outline" id="uploadFbBtn" onclick="uploadFacebook()" style="background:#1877f2;color:white;border-color:#1877f2">📘 Facebook</button>
+      <button class="btn btn-outline" id="uploadTtBtn" onclick="uploadTikTok()" style="background:#010101;color:white;border-color:#333">🎵 TikTok</button>
+      <button class="btn btn-outline" id="uploadIgBtn" onclick="uploadInstagram()" style="background:linear-gradient(45deg,#f09433,#dc2743,#bc1888);color:white;border:none">📸 Instagram</button>
+    </div>
+
+    <!-- FB/TT upload modal -->
+    <div id="uploadModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;align-items:center;justify-content:center">
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:90%;max-width:400px">
+        <div style="font-weight:700;font-size:16px;margin-bottom:16px" id="uploadModalTitle">Upload</div>
+        <div class="settings-row" style="margin-bottom:12px">
+          <label>Title</label>
+          <input type="text" id="uploadModalTitleInput" placeholder="Video title (optional)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:6px">
+        </div>
+        <div id="uploadModalPrivacyRow" class="settings-row" style="margin-bottom:12px;display:none">
+          <label>TikTok Privacy</label>
+          <select id="uploadModalPrivacy" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:6px">
+            <option value="SELF_ONLY">Only Me (for testing)</option>
+            <option value="FOLLOWER_OF_CREATOR">Followers</option>
+            <option value="MUTUAL_FOLLOW_FRIENDS">Mutual Friends</option>
+            <option value="PUBLIC_TO_EVERYONE">Public</option>
+          </select>
+        </div>
+        <div id="uploadModalDescRow" class="settings-row" style="margin-bottom:16px;display:none">
+          <label>Description</label>
+          <textarea id="uploadModalDescText" rows="3" placeholder="Video description (optional)" style="width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 10px;border-radius:6px"></textarea>
+        </div>
+        <div id="uploadModalStatus" style="font-size:13px;color:var(--muted);margin-bottom:12px;min-height:20px"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="uploadModalConfirm" onclick="confirmUpload()">Upload</button>
+          <button class="btn btn-outline" onclick="closeUploadModal()">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -389,18 +421,65 @@ textarea { resize: vertical; min-height: 70px; }
   </div>
 
   <div class="card">
-    <div class="card-title">📸 Instagram Login</div>
-    <div class="settings-row">
-      <label>Username</label>
-      <input type="text" id="setIgUser" placeholder="your_instagram_username">
+    <div class="card-title">🎵 TikTok Upload (Official API)</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      Official TikTok Content Posting API — no cookies needed for upload. Requires a TikTok Developer App.
+      <a href="https://developers.tiktok.com/apps/" target="_blank" style="color:var(--accent2)">Create App →</a>
     </div>
     <div class="settings-row">
-      <label>Password</label>
-      <input type="password" id="setIgPass" placeholder="your_password">
+      <label>TIKTOK_CLIENT_KEY</label>
+      <input type="text" id="setTtClientKey" placeholder="awxxxxxxxxxxxxxxxx">
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Used for downloading private reels and uploading to Instagram</div>
-    <button class="btn btn-primary" onclick="saveInstagram()">Save Instagram</button>
-    <span class="save-indicator" id="igSaved">✓ Saved</span>
+    <div class="settings-row">
+      <label>TIKTOK_CLIENT_SECRET</label>
+      <input type="password" id="setTtClientSecret" placeholder="Client secret from TikTok Developer Portal">
+    </div>
+    <div class="settings-row">
+      <label>TIKTOK_REDIRECT_URI</label>
+      <input type="text" id="setTtRedirectUri" placeholder="https://your-app.railway.app/api/upload/tiktok/callback">
+    </div>
+    <div class="settings-row">
+      <label>TIKTOK_ACCESS_TOKEN (auto-filled after Connect)</label>
+      <input type="password" id="setTtAccessToken" placeholder="Leave empty — filled automatically after OAuth">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <button class="btn btn-primary" onclick="saveTikTokApi()">Save Keys</button>
+      <a class="btn btn-outline" id="ttConnectBtn" href="/api/upload/tiktok/auth" target="_blank" style="text-decoration:none">🔗 Connect TikTok Account</a>
+      <span class="save-indicator" id="ttApiSaved">✓ Saved</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">
+      After saving keys, click <b>Connect TikTok Account</b> → approve → access token is saved automatically.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📸 Instagram Upload (OAuth)</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      Instagram Graph API — Business/Creator account লাগবে। Facebook Developer App এ Instagram product enable করো।
+      Redirect URI: <code>https://your-app.railway.app/api/upload/instagram/callback</code>
+    </div>
+    <div class="settings-row">
+      <label>IG_APP_ID (Facebook App ID — same app)</label>
+      <input type="text" id="setIgAppId" placeholder="Same as FB_APP_ID">
+    </div>
+    <div class="settings-row">
+      <label>IG_APP_SECRET</label>
+      <input type="password" id="setIgAppSecret" placeholder="App Secret">
+    </div>
+    <div class="settings-row">
+      <label>IG_REDIRECT_URI</label>
+      <input type="text" id="setIgRedirectUri" placeholder="https://your-app.railway.app/api/upload/instagram/callback">
+    </div>
+    <div class="settings-row">
+      <label>IG_ACCOUNT_ID (auto-filled after connect)</label>
+      <input type="text" id="setIgAccountId" placeholder="Auto-filled after login">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <button class="btn btn-primary" onclick="saveInstagram()">Save Keys</button>
+      <a class="btn btn-outline" href="/api/upload/instagram/auth" target="_blank" style="text-decoration:none;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:white;border:none">🔗 Connect Instagram</a>
+      <span class="save-indicator" id="igSaved">✓ Saved</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Keys সেভ করার পর <b>Connect Instagram</b> ক্লিক করো → login করো → token auto-save হবে।</div>
   </div>
 
   <div class="card">
@@ -414,18 +493,34 @@ textarea { resize: vertical; min-height: 70px; }
   </div>
 
   <div class="card">
-    <div class="card-title">📘 Facebook Upload</div>
-    <div class="settings-row">
-      <label>FB_ACCESS_TOKEN</label>
-      <input type="password" id="setFbToken" placeholder="EAABsbCS...">
+    <div class="card-title">📘 Facebook Upload (OAuth)</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+      Facebook Developer App বানাও →
+      <a href="https://developers.facebook.com/apps/" target="_blank" style="color:var(--accent2)">developers.facebook.com</a>.
+      Redirect URI: <code id="fbRedirectUriHint">https://your-app.railway.app/api/upload/facebook/callback</code>
     </div>
     <div class="settings-row">
-      <label>FB_PAGE_ID (Page or Profile ID)</label>
-      <input type="text" id="setFbPageId" placeholder="123456789">
+      <label>FB_APP_ID</label>
+      <input type="text" id="setFbAppId" placeholder="123456789012345">
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Get token from Facebook Graph API Explorer with <code>pages_manage_posts</code> permission</div>
-    <button class="btn btn-primary" onclick="saveFacebook()">Save Facebook</button>
-    <span class="save-indicator" id="fbSaved">✓ Saved</span>
+    <div class="settings-row">
+      <label>FB_APP_SECRET</label>
+      <input type="password" id="setFbAppSecret" placeholder="App Secret from Facebook Developer Portal">
+    </div>
+    <div class="settings-row">
+      <label>FB_REDIRECT_URI</label>
+      <input type="text" id="setFbRedirectUri" placeholder="https://your-app.railway.app/api/upload/facebook/callback">
+    </div>
+    <div class="settings-row">
+      <label>FB_PAGE_ID (Page ID — auto-filled after connect)</label>
+      <input type="text" id="setFbPageId" placeholder="Auto-filled after login">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <button class="btn btn-primary" onclick="saveFacebook()">Save Keys</button>
+      <a class="btn btn-outline" href="/api/upload/facebook/auth" target="_blank" style="text-decoration:none;background:#1877f2;color:white;border-color:#1877f2">🔗 Connect Facebook</a>
+      <span class="save-indicator" id="fbSaved">✓ Saved</span>
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Keys সেভ করার পর <b>Connect Facebook</b> ক্লিক করো → login করো → token auto-save হবে।</div>
   </div>
 
   <div class="card">
@@ -735,13 +830,11 @@ async function loadResult(jobId, isVoiceover) {
   const r = job.result;
   const mb = (r.sizeBytes / 1024 / 1024).toFixed(2);
   const fileUrl = '/files/' + encodeURIComponent(r.fileName);
-  const previewUrl = r.previewName ? '/files/' + encodeURIComponent(r.previewName) : fileUrl;
-  document.getElementById('resultInfo').textContent = r.fileName + '  •  ' + mb + ' MB'
-    + (r.previewName ? '  |  📱 360p preview ready' : '');
+  document.getElementById('resultInfo').textContent = r.fileName + '  •  ' + mb + ' MB';
   document.getElementById('downloadBtn').href = fileUrl;
   document.getElementById('downloadBtn').download = r.fileName;
   const video = document.getElementById('videoPreview');
-  video.src = previewUrl; video.load();
+  video.src = fileUrl; video.load();
   document.getElementById('voiceoverSection').style.display = isVoiceover ? 'block' : 'none';
   document.getElementById('resultCard').classList.add('show');
   document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
@@ -859,6 +952,96 @@ async function applyVoiceover() {
 async function uploadYT()    { alert('YouTube upload — configure OAuth in Settings first.'); }
 async function uploadDrive() { alert('Google Drive upload — configure OAuth in Settings first.'); }
 
+// ── Upload Modal state ──
+let _uploadTarget = null; // 'facebook' | 'tiktok'
+
+function uploadFacebook() {
+  _uploadTarget = 'facebook';
+  document.getElementById('uploadModalTitle').textContent = '📘 Upload to Facebook';
+  document.getElementById('uploadModalPrivacyRow').style.display = 'none';
+  document.getElementById('uploadModalDescRow').style.display    = 'block';
+  document.getElementById('uploadModalStatus').textContent       = '';
+  document.getElementById('uploadModalTitleInput').value         = '';
+  document.getElementById('uploadModalDescText').value           = '';
+  document.getElementById('uploadModal').style.display           = 'flex';
+}
+
+function uploadTikTok() {
+  _uploadTarget = 'tiktok';
+  document.getElementById('uploadModalTitle').textContent     = '🎵 Upload to TikTok';
+  document.getElementById('uploadModalPrivacyRow').style.display = 'block';
+  document.getElementById('uploadModalDescRow').style.display    = 'none';
+  document.getElementById('uploadModalStatus').textContent        = '';
+  document.getElementById('uploadModalTitleInput').value          = '';
+  document.getElementById('uploadModal').style.display            = 'flex';
+}
+
+function uploadInstagram() {
+  _uploadTarget = 'instagram';
+  document.getElementById('uploadModalTitle').textContent     = '📸 Upload to Instagram';
+  document.getElementById('uploadModalPrivacyRow').style.display = 'none';
+  document.getElementById('uploadModalDescRow').style.display    = 'block';
+  document.getElementById('uploadModalStatus').textContent        = '';
+  document.getElementById('uploadModalTitleInput').value          = '';
+  document.getElementById('uploadModalDescText').value            = '';
+  document.getElementById('uploadModal').style.display            = 'flex';
+}
+
+function closeUploadModal() {
+  document.getElementById('uploadModal').style.display = 'none';
+}
+
+async function confirmUpload() {
+  if (!currentJobId) { alert('No completed job found.'); return; }
+  const btn    = document.getElementById('uploadModalConfirm');
+  const status = document.getElementById('uploadModalStatus');
+  btn.disabled = true;
+  status.textContent = '⏳ Uploading…';
+
+  const title = document.getElementById('uploadModalTitleInput').value.trim();
+  const body  = { jobId: currentJobId, title };
+
+  if (_uploadTarget === 'facebook') {
+    body.description = document.getElementById('uploadModalDescText').value.trim();
+  } else if (_uploadTarget === 'instagram') {
+    body.caption = document.getElementById('uploadModalDescText').value.trim();
+  } else {
+    body.privacy = document.getElementById('uploadModalPrivacy').value;
+  }
+
+  try {
+    const r = await fetch(`/api/upload/${_uploadTarget}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      const link = data.url ? ` <a href="${data.url}" target="_blank" style="color:var(--accent2)">View →</a>` : '';
+      status.innerHTML = `✅ Upload complete!${link}`;
+      btn.disabled = false;
+    } else {
+      status.textContent = '❌ ' + (data.error || 'Upload failed');
+      btn.disabled = false;
+    }
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    btn.disabled = false;
+  }
+}
+
+// ── TikTok API settings ──
+async function saveTikTokApi() {
+  const payload = {
+    TIKTOK_CLIENT_KEY:    document.getElementById('setTtClientKey').value.trim(),
+    TIKTOK_CLIENT_SECRET: document.getElementById('setTtClientSecret').value.trim(),
+    TIKTOK_REDIRECT_URI:  document.getElementById('setTtRedirectUri').value.trim(),
+  };
+  const tok = document.getElementById('setTtAccessToken').value.trim();
+  if (tok) payload.TIKTOK_ACCESS_TOKEN = tok;
+  await saveConfig(payload, 'ttApiSaved');
+}
+
 // ─── Settings ─────────────────────────────────────────────
 async function saveConfig(data, id) {
   await fetch('/api/setup/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
@@ -877,11 +1060,11 @@ async function saveTikTokCookies() {
   const el = document.getElementById('tiktokCookiesSaved');
   if (el) { el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
 }
-async function saveInstagram()  { await saveConfig({ IG_USERNAME: document.getElementById('setIgUser').value.trim(), IG_PASSWORD: document.getElementById('setIgPass').value.trim() }, 'igSaved'); }
+async function saveInstagram()  { await saveConfig({ IG_APP_ID: document.getElementById('setIgAppId').value.trim(), IG_APP_SECRET: document.getElementById('setIgAppSecret').value.trim(), IG_REDIRECT_URI: document.getElementById('setIgRedirectUri').value.trim() }, 'igSaved'); }
 async function saveKsCookies()  { await saveConfig({ KS_COOKIES: document.getElementById('ksCookies').value.trim() }, 'ksCookiesSaved'); }
 async function saveProxy()      { await saveConfig({ YTDLP_PROXY: document.getElementById('setProxy').value.trim(), VMESS_LINK: document.getElementById('setVmess').value.trim() }, 'proxySaved'); }
 async function saveGoogle()     { await saveConfig({ GOOGLE_CLIENT_ID: document.getElementById('setGClientId').value.trim(), GOOGLE_CLIENT_SECRET: document.getElementById('setGClientSecret').value.trim() }, 'googleSaved'); }
-async function saveFacebook()   { await saveConfig({ FB_ACCESS_TOKEN: document.getElementById('setFbToken').value.trim(), FB_PAGE_ID: document.getElementById('setFbPageId').value.trim() }, 'fbSaved'); }
+async function saveFacebook()   { await saveConfig({ FB_APP_ID: document.getElementById('setFbAppId').value.trim(), FB_APP_SECRET: document.getElementById('setFbAppSecret').value.trim(), FB_REDIRECT_URI: document.getElementById('setFbRedirectUri').value.trim() }, 'fbSaved'); }
 async function saveDriveFolder() {
   let val = document.getElementById('setDriveFolder').value.trim();
   const m = val.match(/folders\/([a-zA-Z0-9_-]+)/);
