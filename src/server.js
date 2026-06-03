@@ -60,10 +60,17 @@ app.get('/version', (_, res) => {
     python:  tryCmd('python3 --version 2>&1'),
     node:    process.version,
     cookies: fs.existsSync(process.env.COOKIES_FILE || '/app/data/cookies/cookies.txt'),
+    tiktok_cookies: fs.existsSync(process.env.TIKTOK_COOKIES_FILE || '/app/data/cookies/tiktok_cookies.txt'),
     ks_cookies: !!(process.env.KS_COOKIES),
     proxy:   !!(process.env.YTDLP_PROXY),
     vmess:   !!(process.env.VMESS_LINK),
     google_oauth: !!(process.env.GOOGLE_CLIENT_ID),
+    fb_token:      !!(process.env.FB_ACCESS_TOKEN),
+    fb_page:       !!(process.env.FB_PAGE_ID),
+    ig_token:      !!(process.env.IG_ACCESS_TOKEN),
+    ig_account:    !!(process.env.IG_ACCOUNT_ID),
+    tiktok_token:  !!(process.env.TIKTOK_ACCESS_TOKEN),
+    drive_folder:  process.env.DRIVE_FOLDER_ID || '',
   });
 });
 
