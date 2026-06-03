@@ -221,6 +221,7 @@ async function addHeading(inputPath, outputPath, heading, jobLog) {
   }
 }
 
+// ─── Python Ranking Renderer (UPDATED WITH SMALLER FONTS & OUTLINE) ───
 const PY_RANKING_RENDERER = String.raw`
 import sys, json, unicodedata
 from PIL import Image, ImageDraw, ImageFont
@@ -258,12 +259,13 @@ emoji_layout = ImageFont.Layout.BASIC if hasattr(ImageFont, 'Layout') else (Imag
 img = Image.new('RGBA', (W, H), (0, 0, 0, 0))
 draw = ImageDraw.Draw(img)
 
-num_size = 74 if total_ranks <= 5 else 66
-active_num_size = num_size + 4
-small_num_size = 86
-active_title_size = 42
-badge_title_size = 46
-global_title_size = 52
+# সাইজ ছোট এবং কম্প্যাক্ট করা হয়েছে
+num_size = 50
+active_num_size = 60
+small_num_size = 50
+active_title_size = 30
+badge_title_size = 32
+global_title_size = 40
 
 num_font = ImageFont.truetype(font_path, num_size, layout_engine=layout)
 active_num_font = ImageFont.truetype(font_path, active_num_size, layout_engine=layout)
@@ -274,13 +276,10 @@ badge_title_font = ImageFont.truetype(font_path, badge_title_size, layout_engine
 def make_global_title_font(size):
     return ImageFont.truetype(font_path, size, layout_engine=layout)
 
-# NotoColorEmoji is a bitmap font that only renders at size 109
-# We load at 109 and paste+resize into draw surface for other sizes
 EMOJI_NATIVE_SIZE = 109
 
 def make_emoji_font():
-    if not emoji_font_path:
-        return None
+    if not emoji_font_path: return None
     try:
         return ImageFont.truetype(emoji_font_path, EMOJI_NATIVE_SIZE, layout_engine=emoji_layout)
     except Exception:
@@ -299,24 +298,36 @@ def is_emoji(ch):
         return False
 
 def render_emoji_to_img(seq, target_size, emoji_font_obj):
-    """Render emoji at native size 109 then resize to target_size."""
+    """ইমোজি ফিক্স: embedded_color=True ব্যবহার করা হয়েছে যাতে সাদা না হয়ে কালার আসে"""
     try:
-        bb = ImageDraw.Draw(Image.new('RGBA',(10,10))).textbbox((0,0), seq, font=emoji_font_obj)
+        kwargs = {'embedded_color': True} if hasattr(ImageFont, 'Layout') else {}
+        tmp_d = ImageDraw.Draw(Image.new('RGBA',(10,10)))
+        bb = tmp_d.textbbox((0,0), seq, font=emoji_font_obj, **kwargs)
+        
         ew = max(1, bb[2]-bb[0])
         eh = max(1, bb[3]-bb[1])
         tmp_e = Image.new('RGBA', (ew + 20, eh + 20), (0,0,0,0))
         de = ImageDraw.Draw(tmp_e)
-        de.text((-bb[0]+10, -bb[1]+10), seq, font=emoji_font_obj)
-        # Scale to target_size height
+        de.text((-bb[0]+10, -bb[1]+10), seq, font=emoji_font_obj, **kwargs)
+        
         scale = target_size / max(1, eh)
         new_w = max(1, int(ew * scale))
         new_h = max(1, int(target_size))
-        return tmp_e.resize((new_w + 20, new_h + 20), Image.LANCZOS), new_w
+        resample_method = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+        return tmp_e.resize((new_w + 20, new_h + 20), resample_method), new_w
     except Exception:
         return None, 0
 
-def draw_text_with_emoji(draw, x, y, text, main_font, emoji_font_obj, fill, shadow=None):
-    # Get target size from main_font
+def draw_text_with_outline(draw, cx, y, seq, font, fill):
+    """ব্যাকগ্রাউন্ড বক্সের বদলে ৩ পিক্সেলের স্ট্রং কালো আউটলাইন স্ট্রোক"""
+    stroke_width = 3
+    for dx in range(-stroke_width, stroke_width + 1):
+        for dy in range(-stroke_width, stroke_width + 1):
+            if dx*dx + dy*dy <= stroke_width*stroke_width:
+                draw.text((cx + dx, y + dy), seq, font=font, fill=(0, 0, 0, 255))
+    draw.text((cx, y), seq, font=font, fill=fill)
+
+def draw_text_with_emoji(draw, x, y, text, main_font, emoji_font_obj, fill, use_outline=True):
     try:
         sample_bb = draw.textbbox((0,0), 'A', font=main_font)
         target_h = max(16, sample_bb[3] - sample_bb[1])
@@ -339,27 +350,23 @@ def draw_text_with_emoji(draw, x, y, text, main_font, emoji_font_obj, fill, shad
         if use_emoji:
             emoji_img, ew = render_emoji_to_img(seq, target_h, emoji_font_obj)
             if emoji_img:
-                # Get the actual image we're drawing on
-                draw._image.paste(emoji_img, (int(cx), int(y)), emoji_img)
+                draw._image.paste(emoji_img, (int(cx), int(y-4)), emoji_img)
                 cx += ew + 4
                 i = j
                 continue
-        font = main_font
-        if shadow:
-            sr, sg, sb, sa, sox, soy = shadow
-            draw.text((cx + sox, y + soy), seq, font=font, fill=(sr, sg, sb, sa))
-        draw.text((cx, y), seq, font=font, fill=fill)
-        bb = draw.textbbox((0, 0), seq, font=font)
+        if use_outline:
+            draw_text_with_outline(draw, cx, y, seq, main_font, fill)
+        else:
+            draw.text((cx, y), seq, font=main_font, fill=fill)
+        bb = draw.textbbox((0, 0), seq, font=main_font)
         cx += bb[2] - bb[0] + 1
         i = j
 
-# pixel-precise wrap using a proper tmp draw (fixes Bengali ligature measurement)
 def wrap_text_px(text, font, max_w):
     tmp_img = Image.new('RGBA', (max_w * 2 + 100, 100))
     tmp_draw = ImageDraw.Draw(tmp_img)
     words = text.split()
-    if not words:
-        return []
+    if not words: return []
     lines = []
     cur = []
     for w in words:
@@ -370,86 +377,76 @@ def wrap_text_px(text, font, max_w):
         else:
             lines.append(' '.join(cur))
             cur = [w]
-    if cur:
-        lines.append(' '.join(cur))
+    if cur: lines.append(' '.join(cur))
     return lines
 
-# auto-shrink global title font to fit width in max 3 lines
 def render_global_title(draw, text, max_w, start_font_size, min_size, y_start, emoji_f):
     fs = start_font_size
     while fs >= min_size:
         f = make_global_title_font(fs)
         ef = None
         if emoji_font_path:
-            try:
-                ef = ImageFont.truetype(emoji_font_path, fs, layout_engine=emoji_layout)
-            except Exception:
-                ef = emoji_f
+            try: ef = ImageFont.truetype(emoji_font_path, fs, layout_engine=emoji_layout)
+            except Exception: ef = emoji_f
         lines = wrap_text_px(text, f, max_w)[:3]
-        lh = int(fs * 1.25)
+        lh = int(fs * 1.35)
         tmp_img2 = Image.new('RGBA', (max_w + 100, 60))
         tmp_d2 = ImageDraw.Draw(tmp_img2)
         fits = all(tmp_d2.textbbox((0,0), ln, font=f)[2] - tmp_d2.textbbox((0,0), ln, font=f)[0] <= max_w for ln in lines)
-        if fits:
-            return f, ef, lines, lh, y_start
+        if fits: return f, ef, lines, lh, y_start
         fs -= 1
     f = make_global_title_font(min_size)
     lines = wrap_text_px(text, f, max_w)[:3]
-    lh = int(min_size * 1.25)
-    ef = None
-    if emoji_font_path:
-        try:
-            ef = ImageFont.truetype(emoji_font_path, min_size, layout_engine=emoji_layout)
-        except Exception:
-            ef = emoji_f
-    return f, ef, lines, lh, y_start
+    lh = int(min_size * 1.35)
+    return f, emoji_f, lines, lh, y_start
 
-shadow = (0, 0, 0, 220, 2, 2)
-white = (255, 255, 255, 245)
-red = (255, 72, 72, 255)
-faded = (255, 255, 255, 210)
-gold = (255, 200, 50, 255)
+white = (255, 255, 255, 255)
+list_colors = [
+    (255, 72, 72, 255),   # Red
+    (255, 165, 0, 255),   # Orange
+    (255, 215, 0, 255),   # Yellow
+    (0, 191, 255, 255),   # Blue
+    (50, 205, 50, 255),   # Green
+    (255, 105, 180, 255), # Hot Pink
+    (147, 112, 219, 255)  # Purple
+]
 
-# ── Global title at top ──
 title_bottom_y = 0
 if global_title:
     pad_x = 32
-    pad_y = 20
+    pad_y = 140 # 🚨 সেফ জোন: লেখা উপর থেকে ১৪০ পিক্সেল নিচে নামানো হলো
     max_text_w = W - pad_x * 2
     gt_font, gt_ef, gt_lines, gt_lh, _ = render_global_title(
         draw, global_title, max_text_w, global_title_size, 26, pad_y, emoji_font
     )
-    block_h = gt_lh * len(gt_lines) + pad_y * 2
-    draw.rounded_rectangle((0, 0, W, block_h + 10), radius=0, fill=(0, 0, 0, 175))
+    
+    # ব্যাকগ্রাউন্ড বক্সটা ডিলিট করা হয়েছে
     cy = pad_y
     for ln in gt_lines:
-        # measure with tmp draw for accuracy
         tmp2 = Image.new('RGBA', (W + 100, gt_lh + 10))
         td2  = ImageDraw.Draw(tmp2)
         bb = td2.textbbox((0, 0), ln, font=gt_font)
         lw = bb[2] - bb[0]
-        # clamp so text never goes outside pad_x margin
         lx = max(pad_x, (W - lw) // 2 - bb[0])
-        draw_text_with_emoji(draw, lx, cy - bb[1], ln, gt_font, gt_ef, white, shadow)
+        draw_text_with_emoji(draw, lx, cy - bb[1], ln, gt_font, gt_ef, white, use_outline=True)
         cy += gt_lh
-    title_bottom_y = block_h + 10
+    title_bottom_y = cy + 10
 
 if preset == 'current_badge':
     badge_top = title_bottom_y + 18
     draw.rounded_rectangle((18, badge_top, W - 18, badge_top + 166), radius=28, fill=(0, 0, 0, 135))
-    draw.rounded_rectangle((28, badge_top + 14, 140, badge_top + 152), radius=24, fill=(120, 0, 0, 170), outline=(255, 80, 80, 230), width=2)
-    draw_text_with_emoji(draw, 46, badge_top + 36, f'{current_rank}.', small_num_font, badge_emoji_font, red, shadow)
+    draw_text_with_emoji(draw, 46, badge_top + 36, f'{current_rank}.', small_num_font, badge_emoji_font, list_colors[current_rank % len(list_colors)], use_outline=True)
     if title:
         lines = wrap_text_px(title, badge_title_font, W - 176)[:2]
         ty = badge_top + 32
         for line in lines:
-            draw_text_with_emoji(draw, 165, ty, line, badge_title_font, badge_emoji_font, white, shadow)
+            draw_text_with_emoji(draw, 165, ty, line, badge_title_font, badge_emoji_font, white, use_outline=True)
             ty += 56
 else:
     list_top = title_bottom_y + 14
-    start_y = list_top + (196 if total_ranks <= 5 else 151)
-    gap = 98 if total_ranks <= 5 else 84
-    # pre-measure widest number label to align all titles consistently
+    start_y = list_top + (110 if total_ranks <= 5 else 90)
+    gap = 75 if total_ranks <= 5 else 60
+    
     tmp_measure = Image.new('RGBA', (200, 100))
     tmp_d = ImageDraw.Draw(tmp_measure)
     max_num_w = 0
@@ -457,21 +454,23 @@ else:
         f_ = active_num_font if r == current_rank else num_font
         bb_ = tmp_d.textbbox((0, 0), f'{r}.', font=f_)
         max_num_w = max(max_num_w, bb_[2] - bb_[0])
-    num_x = 28
-    title_x = num_x + max_num_w + 14   # 14px gap after widest number
+    num_x = 32
+    title_x = num_x + max_num_w + 16
 
     for rank in range(1, total_ranks + 1):
         y = start_y + (rank - 1) * gap
         is_active = rank == current_rank
         font = active_num_font if is_active else num_font
-        fill = gold if is_active else faded
-        draw_text_with_emoji(draw, num_x, y, f'{rank}.', font, emoji_font, fill, shadow)
+        color_idx = (rank - 1) % len(list_colors)
+        num_fill = list_colors[color_idx]
+        
+        draw_text_with_emoji(draw, num_x, y, f'{rank}.', font, emoji_font, num_fill, use_outline=True)
         if is_active and title:
             lines = wrap_text_px(title, active_title_font, W - title_x - 16)[:2]
-            ty = y + 18
+            ty = y + 15
             for line in lines:
-                draw_text_with_emoji(draw, title_x, ty, line, active_title_font, emoji_font, white, shadow)
-                ty += 50
+                draw_text_with_emoji(draw, title_x, ty, line, active_title_font, emoji_font, white, use_outline=True)
+                ty += 40
 
 img.save(cfg['out'])
 print('OK')
