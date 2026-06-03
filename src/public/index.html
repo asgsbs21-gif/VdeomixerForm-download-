@@ -445,6 +445,7 @@ textarea { resize: vertical; min-height: 70px; }
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
       <button class="btn btn-primary" onclick="saveTikTokApi()">Save Keys</button>
       <a class="btn btn-outline" id="ttConnectBtn" href="/api/upload/tiktok/auth" target="_blank" style="text-decoration:none">🔗 Connect TikTok Account</a>
+      <span id="ttConnectedBadge" style="display:none;background:#22c55e;color:white;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">✓ Connected</span>
       <span class="save-indicator" id="ttApiSaved">✓ Saved</span>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:8px">
@@ -477,6 +478,7 @@ textarea { resize: vertical; min-height: 70px; }
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
       <button class="btn btn-primary" onclick="saveInstagram()">Save Keys</button>
       <a class="btn btn-outline" href="/api/upload/instagram/auth" target="_blank" style="text-decoration:none;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:white;border:none">🔗 Connect Instagram</a>
+      <span id="igConnectedBadge" style="display:none;background:#22c55e;color:white;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">✓ Connected</span>
       <span class="save-indicator" id="igSaved">✓ Saved</span>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:8px">Keys সেভ করার পর <b>Connect Instagram</b> ক্লিক করো → login করো → token auto-save হবে।</div>
@@ -518,6 +520,7 @@ textarea { resize: vertical; min-height: 70px; }
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
       <button class="btn btn-primary" onclick="saveFacebook()">Save Keys</button>
       <a class="btn btn-outline" href="/api/upload/facebook/auth" target="_blank" style="text-decoration:none;background:#1877f2;color:white;border-color:#1877f2">🔗 Connect Facebook</a>
+      <span id="fbConnectedBadge" style="display:none;background:#22c55e;color:white;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600">✓ Connected</span>
       <span class="save-indicator" id="fbSaved">✓ Saved</span>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:8px">Keys সেভ করার পর <b>Connect Facebook</b> ক্লিক করো → login করো → token auto-save হবে।</div>
@@ -580,6 +583,22 @@ textarea { resize: vertical; min-height: 70px; }
 </div>
 
 <script>
+// ─── Safe API caller ──────────────────────────────────────
+async function safeFetch(url, label) {
+  try {
+    const res = await fetch(url);
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      console.warn(label + ' — not JSON, got: ' + ct.substring(0, 80));
+      return null;
+    }
+    return await res.json();
+  } catch (e) {
+    console.warn(label + ' — ' + e.message);
+    return null;
+  }
+}
+
 // ─── Nav ──────────────────────────────────────────────────
 function showPage(name, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -666,9 +685,8 @@ async function fetchDuration(id, url) {
   if (_durCache[url]) { badge.textContent = _durCache[url]; badge.style.display = ''; return; }
   try {
     badge.textContent = '…'; badge.style.display = '';
-    const r = await fetch('/api/mixer/duration?url=' + encodeURIComponent(url));
-    const d = await r.json();
-    if (d.formatted) { _durCache[url] = d.formatted; badge.textContent = d.formatted; }
+    const r = await safeFetch('/api/mixer/duration?url=' + encodeURIComponent(url), 'duration');
+    if (r && r.formatted) { _durCache[url] = r.formatted; badge.textContent = r.formatted; }
     else badge.style.display = 'none';
   } catch(_) { badge.style.display = 'none'; }
 }
@@ -687,10 +705,8 @@ document.querySelectorAll('input[name=audio]').forEach(r => {
 // ─── Audio Library ────────────────────────────────────────
 let audioLib = [];
 async function loadAudioLib() {
-  try {
-    const r = await fetch('/api/setup/audio-lib');
-    if (r.ok) { audioLib = await r.json(); renderAudioLib(); }
-  } catch(_) {}
+  const data = await safeFetch('/api/setup/audio-lib', 'audio-lib');
+  if (data && Array.isArray(data)) { audioLib = data; renderAudioLib(); }
 }
 async function saveAudioToLib() {
   const url = document.getElementById('audioUrl').value.trim();
@@ -845,8 +861,8 @@ async function loadJobs() {
   const list = document.getElementById('jobsList');
   if (!list) return;
   try {
-    const jobs = await (await fetch('/api/mixer/jobs')).json();
-    if (!jobs.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">No jobs yet</div>'; return; }
+    const jobs = await safeFetch('/api/mixer/jobs', 'jobs');
+    if (!jobs || !jobs.length) { list.innerHTML = '<div style="color:var(--muted);font-size:13px">No jobs yet</div>'; return; }
     list.innerHTML = jobs.slice().reverse().map(j => {
       const dt = new Date(j.createdAt).toLocaleString();
       const name = j.result?.fileName || j.id;
@@ -953,7 +969,7 @@ async function uploadYT()    { alert('YouTube upload — configure OAuth in Sett
 async function uploadDrive() { alert('Google Drive upload — configure OAuth in Settings first.'); }
 
 // ── Upload Modal state ──
-let _uploadTarget = null; // 'facebook' | 'tiktok'
+let _uploadTarget = null;
 
 function uploadFacebook() {
   _uploadTarget = 'facebook';
@@ -1072,34 +1088,63 @@ async function saveDriveFolder() {
   await saveConfig({ DRIVE_FOLDER_ID: val }, 'driveFolderSaved');
 }
 
+// ─── Load saved settings into fields on page load ─────────
+async function loadSettingsOnPageLoad() {
+  const cfg = await safeFetch('/api/setup/config', 'loadSettings');
+  if (cfg) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    set('setProxy',         cfg.YTDLP_PROXY);
+    set('setVmess',         cfg.VMESS_LINK);
+    set('setGClientId',     cfg.GOOGLE_CLIENT_ID);
+    set('setTtClientKey',   cfg.TIKTOK_CLIENT_KEY);
+    set('setTtRedirectUri', cfg.TIKTOK_REDIRECT_URI);
+    set('setTtAccessToken', cfg.TIKTOK_ACCESS_TOKEN);
+    set('setIgAppId',       cfg.IG_APP_ID);
+    set('setIgRedirectUri', cfg.IG_REDIRECT_URI);
+    set('setIgAccountId',   cfg.IG_ACCOUNT_ID);
+    set('setFbAppId',       cfg.FB_APP_ID);
+    set('setFbRedirectUri', cfg.FB_REDIRECT_URI);
+    set('setFbPageId',      cfg.FB_PAGE_ID);
+    set('setDriveFolder',   cfg.DRIVE_FOLDER_ID);
+    if (cfg.KS_COOKIES) set('ksCookies', cfg.KS_COOKIES);
+  }
+
+  const v = await safeFetch('/version', 'badge');
+  if (v) {
+    const badge = (id, show) => { const el = document.getElementById(id); if (el) el.style.display = show ? 'inline-block' : 'none'; };
+    badge('ttConnectedBadge', v.tiktok_token);
+    badge('igConnectedBadge', v.ig_token && v.ig_account);
+    badge('fbConnectedBadge', v.fb_token && v.fb_page);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadSettingsOnPageLoad);
+
 // ─── Version ──────────────────────────────────────────────
 async function loadVersion() {
   const grid = document.getElementById('versionGrid');
   grid.innerHTML = '<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Loading...</div>';
-  try {
-    const v = await (await fetch('/version')).json();
-    const items = [
-      ['ffmpeg',   v.ffmpeg?.split(' ').slice(0,3).join(' ')||'n/a'],
-      ['yt-dlp',   v.ytdlp||'n/a'],
-      ['Deno',     v.deno?.split('\n')[0]||'n/a'],
-      ['Xray',     v.xray||'n/a'],
-      ['Node.js',  v.node||'n/a'],
-      ['YT Cookies',     v.cookies        ? '✓ Present' : '✗ Missing'],
-      ['TikTok Cookies', v.tiktok_cookies ? '✓ Present' : '✗ Missing'],
-      ['KS Cookies',     v.ks_cookies     ? '✓ Set'     : '✗ Not set'],
-      ['Proxy',          v.proxy          ? '✓ Set'     : '✗ None'],
-      ['Google OAuth',   v.google_oauth   ? '✓ Set'     : '✗ Not set'],
-      ['FB Token',       v.fb_token       ? '✓ Set'     : '✗ Not set'],
-      ['Drive Folder',   v.drive_folder   || '✗ Not set'],
-    ];
-    grid.innerHTML = items.map(([name,val]) =>
-      '<div class="version-item"><div class="name">' + name + '</div>'
-      + '<div class="val" style="color:' + (val.startsWith('✓')?'var(--green)':val.startsWith('✗')?'var(--red)':'var(--text)') + '">'
-      + val + '</div></div>'
-    ).join('');
-  } catch(e) {
-    grid.innerHTML = '<div style="color:var(--red);grid-column:1/-1">Failed: ' + e.message + '</div>';
-  }
+  const v = await safeFetch('/version', 'version');
+  if (!v) { grid.innerHTML = '<div style="color:var(--red);grid-column:1/-1">Failed to load version info</div>'; return; }
+  const items = [
+    ['ffmpeg',   v.ffmpeg?.split(' ').slice(0,3).join(' ')||'n/a'],
+    ['yt-dlp',   v.ytdlp||'n/a'],
+    ['Deno',     v.deno?.split('\n')[0]||'n/a'],
+    ['Xray',     v.xray||'n/a'],
+    ['Node.js',  v.node||'n/a'],
+    ['YT Cookies',     v.cookies        ? '✓ Present' : '✗ Missing'],
+    ['TikTok Cookies', v.tiktok_cookies ? '✓ Present' : '✗ Missing'],
+    ['KS Cookies',     v.ks_cookies     ? '✓ Set'     : '✗ Not set'],
+    ['Proxy',          v.proxy          ? '✓ Set'     : '✗ None'],
+    ['Google OAuth',   v.google_oauth   ? '✓ Set'     : '✗ Not set'],
+    ['FB Token',       v.fb_token       ? '✓ Set'     : '✗ Not set'],
+    ['Drive Folder',   v.drive_folder   || '✗ Not set'],
+  ];
+  grid.innerHTML = items.map(([name,val]) =>
+    '<div class="version-item"><div class="name">' + name + '</div>'
+    + '<div class="val" style="color:' + (val.startsWith('✓')?'var(--green)':val.startsWith('✗')?'var(--red)':'var(--text)') + '">'
+    + val + '</div></div>'
+  ).join('');
 }
 </script>
 </body>
