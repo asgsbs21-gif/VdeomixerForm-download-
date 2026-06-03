@@ -70,7 +70,39 @@ app.use('/auth',        authRoutes);
 app.use('/api/mixer',   mixerRoutes);
 app.use('/api/drive',   driveRoutes);
 app.use('/api/setup',   setupRoutes);
-app.use('/files', express.static(DATA_DIR, { setHeaders: r => r.set('Cache-Control','no-store') }));
+// Range-request aware file server — allows video seek/stream on slow connections
+app.get('/files/:filename', (req, res) => {
+  const filePath = path.join(DATA_DIR, req.params.filename);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'not found' });
+
+  const stat = fs.statSync(filePath);
+  const ext  = path.extname(filePath).toLowerCase();
+  const mime = ext === '.mp4' ? 'video/mp4' : ext === '.m3u8' ? 'application/vnd.apple.mpegurl' : ext === '.ts' ? 'video/mp2t' : 'application/octet-stream';
+  const range = req.headers.range;
+
+  if (range) {
+    const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(startStr, 10);
+    const end   = endStr ? parseInt(endStr, 10) : Math.min(start + 1024 * 1024, stat.size - 1); // 1MB chunks
+    const chunkSize = end - start + 1;
+    res.writeHead(206, {
+      'Content-Range':  `bytes ${start}-${end}/${stat.size}`,
+      'Accept-Ranges':  'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type':   mime,
+      'Cache-Control':  'no-store',
+    });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type':   mime,
+      'Accept-Ranges':  'bytes',
+      'Cache-Control':  'no-store',
+    });
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
 
 app.use((err, req, res, next) => {
   logger.error('Unhandled:', err);
